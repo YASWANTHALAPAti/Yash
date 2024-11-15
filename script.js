@@ -1,95 +1,66 @@
-function saveUserInfo() {
-    const name = document.getElementById('name').value;
-    const email = document.getElementById('email').value;
+const firebaseConfig = {
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_AUTH_DOMAIN",
+    projectId: "YOUR_PROJECT_ID",
+    storageBucket: "YOUR_STORAGE_BUCKET",
+    messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+    appId: "YOUR_APP_ID"
+};
 
-    if (name && email) {
-        const userInfo = { name, email };
-        localStorage.setItem('userInfo', JSON.stringify(userInfo));
-        document.getElementById('userForm').style.display = 'none';
-        document.getElementById('locationSection').style.display = 'block';
-    } else {
-        alert('Please fill in all fields.');
-    }
-}
+// Initialize Firebase
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
 
-function getLocation() {
+document.getElementById('userForm').addEventListener('submit', function(event) {
+    event.preventDefault();
+    const username = document.getElementById('username').value;
     if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(showPosition, showError);
+        navigator.geolocation.getCurrentPosition(position => {
+            const userLocation = {
+                latitude: position.coords.latitude,
+                longitude: position.coords.longitude
+            };
+            document.getElementById('userLocation').innerText = `Location: ${userLocation.latitude}, ${userLocation.longitude}`;
+            // Save user data to Firebase
+            saveUserData(username, userLocation);
+        });
     } else {
-        alert("Geolocation is not supported by this browser.");
-    }
-}
-
-function showPosition(position) {
-    const latitude = position.coords.latitude;
-    const longitude = position.coords.longitude;
-    const userInfo = JSON.parse(localStorage.getItem('userInfo'));
-    userInfo.latitude = latitude;
-    userInfo.longitude = longitude;
-    localStorage.setItem('userInfo', JSON.stringify(userInfo));
-    document.getElementById("userLocation").innerHTML = "Latitude: " + latitude + "<br>Longitude: " + longitude;
-    saveUserLocation(userInfo);
-}
-
-function showError(error) {
-    switch(error.code) {
-        case error.PERMISSION_DENIED:
-            alert("User denied the request for Geolocation.");
-            break;
-        case error.POSITION_UNAVAILABLE:
-            alert("Location information is unavailable.");
-            break;
-        case error.TIMEOUT:
-            alert("The request to get user location timed out.");
-            break;
-        case error.UNKNOWN_ERROR:
-            alert("An unknown error occurred.");
-            break;
-    }
-}
-
-function saveUserLocation(userInfo) {
-    let users = JSON.parse(localStorage.getItem('users')) || [];
-    users.push(userInfo);
-    localStorage.setItem('users', JSON.stringify(users));
-    displayNearbyUsers(userInfo);
-}
-
-function displayNearbyUsers(currentUser) {
-    const users = JSON.parse(localStorage.getItem('users')) || [];
-    const nearbyUsers = users.filter(user => {
-        const distance = calculateDistance(currentUser.latitude, currentUser.longitude, user.latitude, user.longitude);
-        return distance < 50; // Show users within 50 km
-    });
-    const userList = document.getElementById('nearbyUsers');
-    userList.innerHTML = '';
-    nearbyUsers.forEach(user => {
-        const li = document.createElement('li');
-        li.textContent = `Name: ${user.name}, Email: ${user.email}, Distance: ${calculateDistance(currentUser.latitude, currentUser.longitude, user.latitude, user.longitude).toFixed(2)} km`;
-        userList.appendChild(li);
-    });
-}
-
-function calculateDistance(lat1, lon1, lat2, lon2) {
-    const R = 6371; // Radius of the Earth in kilometers
-    const dLat = deg2rad(lat2 - lat1);
-    const dLon = deg2rad(lon2 - lon1);
-    const a = 
-        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * 
-        Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c; // Distance in kilometers
-}
-
-function deg2rad(deg) {
-    return deg * (Math.PI / 180);
-}
-
-document.addEventListener('DOMContentLoaded', () => {
-    const userInfo = JSON.parse(localStorage.getItem('userInfo'));
-    if (userInfo) {
-        document.getElementById('userForm').style.display = 'none';
-        document.getElementById('locationSection').style.display = 'block';
+        alert('Geolocation is not supported by this browser.');
     }
 });
+
+function saveUserData(username, location) {
+    db.collection('users').add({
+        username: username,
+        location: location
+    }).then(() => {
+        displayNearbyUsers(location);
+    }).catch(error => {
+        console.error('Error adding document: ', error);
+    });
+}
+
+function displayNearbyUsers(currentLocation) {
+    db.collection('users').get().then(querySnapshot => {
+        let nearbyUsers = '';
+        querySnapshot.forEach(doc => {
+            const user = doc.data();
+            const distance = calculateDistance(currentLocation, user.location);
+            if (distance < 50) { // Show users within 50 km
+                nearbyUsers += `<p>${user.username} is ${distance.toFixed(2)} km away</p>`;
+            }
+        });
+        document.getElementById('nearbyUsers').innerHTML = nearbyUsers;
+    });
+}
+
+function calculateDistance(loc1, loc2) {
+    const R = 6371; // Radius of the Earth in km
+    const dLat = (loc2.latitude - loc1.latitude) * Math.PI / 180;
+    const dLon = (loc2.longitude - loc1.longitude) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(loc1.latitude * Math.PI / 180) * Math.cos(loc2.latitude * Math.PI / 180) *
+              Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c; // Distance in km
+}
